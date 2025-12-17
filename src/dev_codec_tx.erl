@@ -198,7 +198,7 @@ enforce_valid_tx(TX) ->
         {invalid_field, anchor, TX#tx.anchor}
     ),
     hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.owner, [byte_size(?DEFAULT_OWNER)]),
+        hb_util:check_size(TX#tx.owner, [65, byte_size(?DEFAULT_OWNER)]),
         {invalid_field, owner, TX#tx.owner}
     ),
     hb_util:ok_or_throw(TX,
@@ -745,18 +745,30 @@ real_rsa_nested_bundle_tx_test() ->
         ]
     ).
 
-%% @doc Disabled until we support ECDSA signatures.
-real_ecdsa_bundle_tx_test_disabled() ->
+real_ecdsa_bundle_tx_test() ->
     % 12 items, no mint
     do_real_tx_verify(
         <<"EOARN0wNp4qttWgd15k6IeylsZ88vI2ZeaW2b-mJRkg">>,
-        []
+        [<<"EOARN0wNp4qttWgd15k6IeylsZ88vI2ZeaW2b-mJRkg">>,
+        <<"SpQnHfQQEeCUk6JRClGBuAWI3c9_KMP0odyYvWnRonY">>,
+        <<"0w24gSbeXaCMXDW5ODbu57vrCW-tgVmHSDeg_bV7J6U">>,
+        <<"k5BC8n2pa8J_f4zv8Ylo279KFpiB7MfSmDisGgaUKaY">>,
+        <<"rRj6awXkjQca9Jb4k5zGoKGc2J8WO_RWqkv6-Q7eLGY">>,
+        <<"LuWGClORGNGLwlkb2EZ9ATyFwkE1Hs_sESAde49kTWo">>,
+        <<"Y4jjHk3xXaDbwVg-AWh7IUIhYPKXSSCpD0L2r16eH44">>,
+        <<"kgLDorJxs-9IxEonQwoV4jdF1ZkNPC8K2YuUpqCpB-k">>,
+        <<"sflMXUrX2z-uKHNcTHPvP9HTnVBOX6habAez8JoeFpM">>,
+        <<"ySqcc7oLGuUj-rdiBlWSJ5RQBrCiOvpej8NqaLJVh3w">>,
+        <<"tV1Pwy0FfESETearmKjXskHOKnHyX-t4sM2XkoqKt10">>,
+        <<"ieBYXTXMTPGGLCnA1ukz2jNH63yIAnn432woJHBtbww">>,
+        <<"-EdmXoJ-042y3XPJufiPIGKYB0cI9JafGyKvo-lsNiQ">>]
     ).
 
-real_ecdsa_single_item_bundle_tx_test_disabled() ->
+real_ecdsa_single_item_bundle_tx_test() ->
     do_real_tx_verify(
         <<"5CHMPU1oDCiqwrjGG5PEh7mht9VdVFnnF9yGfjPehno">>,
-        []
+        [<<"5CHMPU1oDCiqwrjGG5PEh7mht9VdVFnnF9yGfjPehno">>,
+         <<"RlFLcskwbmYN7a9knbSZY7pfNX3zk72iR2YzTowNGuA">>]
     ).
 
 real_no_data_tx_test() ->

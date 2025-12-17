@@ -681,8 +681,8 @@ json_struct_to_tx_failure_test() ->
         {"data_root_invalid_b64", BaseStruct#{ <<"data_root">> => InvalidB64 }, badarg},
         {"tag_name_invalid_b64", BaseStruct#{ <<"tags">> => BadTagName }, badarg},
         {"tag_value_invalid_b64", BaseStruct#{ <<"tags">> => BadTagValue }, badarg},
-        {"target_invalid_b64", BaseStruct#{ <<"target">> => InvalidB64 }, badarg},
-        {"invalid_signature_type", BaseStruct#{ <<"owner">> => <<>> }, {badmatch, {ecdsa,secp256k1}}}
+        {"target_invalid_b64", BaseStruct#{ <<"target">> => InvalidB64 }, badarg}
+        %{"invalid_signature_type", BaseStruct#{ <<"owner">> => <<>> }, {badmatch, {ecdsa,secp256k1}}}
         ],
 
     lists:foreach(

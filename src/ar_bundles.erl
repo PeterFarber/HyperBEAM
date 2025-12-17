@@ -97,6 +97,10 @@ verify_item(DataItem) ->
     ValidID = verify_data_item_id(DataItem),
     ValidSignature = verify_data_item_signature(DataItem),
     ValidTags = verify_data_item_tags(DataItem),
+    ?event(debug, {verify_items, 
+            {valid_id, ValidID}, 
+            {valid_signature, ValidSignature}, 
+            {valid_tags, ValidTags}}),
     ValidID andalso ValidSignature andalso ValidTags.
 
 %%%===================================================================
@@ -129,7 +133,7 @@ enforce_valid_tx(TX) ->
         {invalid_field, anchor, TX#tx.anchor}
     ),
     hb_util:ok_or_throw(TX,
-        hb_util:check_size(TX#tx.owner, [0, 32,  byte_size(?DEFAULT_OWNER)]),
+        hb_util:check_size(TX#tx.owner, [0, 32, 65, byte_size(?DEFAULT_OWNER)]),
         {invalid_field, owner, TX#tx.owner}
     ),
     hb_util:ok_or_throw(TX,
@@ -181,6 +185,14 @@ enforce_valid_tx(TX) ->
 data_item_signature_data(RawItem) ->
     true = enforce_valid_tx(RawItem),
     {_, Item} = dev_arweave_common:serialize_data(RawItem),
+    ?event({debug_signature_data, 
+            {signature_type, Item#tx.signature_type},
+            {owner, crypto:hash(sha256, Item#tx.owner)},
+            {target, Item#tx.target},
+            {anchor, Item#tx.anchor},
+            {tags, Item#tx.tags},
+            {data_size, byte_size(Item#tx.data)}
+           }),
     ar_deep_hash:hash([
         utf8_encoded("dataitem"),
         utf8_encoded("1"),
@@ -193,7 +205,8 @@ data_item_signature_data(RawItem) ->
     ]).
 
 get_signature_type({rsa, 65537}) -> "1";
-get_signature_type({eddsa, ed25519}) -> "2".
+get_signature_type({eddsa, ed25519}) -> "2";
+get_signature_type({ecdsa, secp256k1}) -> "3".
 
 %% @doc Verify the data item's ID matches the signature.
 verify_data_item_id(DataItem) ->
@@ -320,6 +333,8 @@ encode_signature_type({rsa, 65537}) ->
     <<1, 0>>;
 encode_signature_type({eddsa, ed25519}) ->
     <<2, 0>>;
+encode_signature_type({ecdsa, secp256k1}) ->
+    <<3, 0>>;
 encode_signature_type(_) ->
     unsupported_tx_format.
 
@@ -411,6 +426,7 @@ deserialize_item(Binary) ->
     {Target, Rest2} = decode_optional_field(Rest),
     {Anchor, Rest3} = decode_optional_field(Rest2),
     {Tags, Data} = decode_tags(Rest3),
+    ?event(debug, {deserialize_item, {anchor, Anchor}, {target, Target}, {tags, Tags}}),
     maybe_unbundle(
         dev_arweave_common:reset_ids(#tx{
             format = ans104,
@@ -504,6 +520,8 @@ decode_signature(<<1, 0, Signature:512/binary, Owner:512/binary, Rest/binary>>) 
     {{rsa, 65537}, Signature, Owner, Rest};
 decode_signature(<<2, 0, Signature:64/binary, Owner:32/binary, Rest/binary>>) ->
     {{eddsa, ed25519}, Signature, Owner, Rest};
+decode_signature(<<3, 0, Signature:65/binary, Owner:65/binary, Rest/binary>>) ->
+    {{ecdsa, secp256k1}, Signature, Owner, Rest};
 decode_signature(Other) ->
     ?event({error_decoding_signature,
         {sig_type, {explicit, binary:part(Other, 0, 2)}},
@@ -514,8 +532,12 @@ decode_signature(Other) ->
 decode_tags(<<0:64/little-integer, 0:64/little-integer, Rest/binary>>) ->
     {[], Rest};
 decode_tags(<<_TagCount:64/little-integer, _TagSize:64/little-integer, Binary/binary>>) ->
+    % TODO: Not sure why we need to skip 2 bytes for decoding this ecdsa data item.
+    % - I think is an issue with 0OUSBugZVc7GKBFXE6jCukG3VFZjCTyVNP6UcsP-exE
+    % - Other ECDSA works.
+    %{Count, <<_Skipped:2/binary, BlocksBinary/binary>>} = decode_zigzag(Binary),
     {Count, BlocksBinary} = decode_zigzag(Binary),
-    {Tags, Rest} = decode_avro_tags(BlocksBinary, Count),
+    {Tags, Rest} = decode_avro_tags(BlocksBinary, abs(Count)),
     %% Pull out the terminating zero
     {0, Rest2} = decode_zigzag(Rest),
     {Tags, Rest2}.
@@ -552,13 +574,10 @@ decode_avro_value(ValueSize, Name, Rest, Count) ->
 %% @doc Decode a VInt encoded ZigZag integer from binary.
 decode_zigzag(Binary) ->
     {ZigZag, Rest} = decode_vint(Binary, 0, 0),
-    case ZigZag band 1 of
-        1 -> {-(ZigZag bsr 1) - 1, Rest};
-        0 -> {ZigZag bsr 1, Rest}
-    end.
-
-decode_vint(<<>>, Result, _Shift) ->
-    {Result, <<>>};
+    Signed = (ZigZag bsr 1) bxor -(ZigZag band 1),
+    {Signed, Rest}.
+decode_vint(<<>>, _Result, _Shift) ->
+    error(incomplete_vint);
 decode_vint(<<Byte, Rest/binary>>, Result, Shift) ->
     VIntPart = Byte band 16#7F,
     NewResult = Result bor (VIntPart bsl Shift),
@@ -762,6 +781,32 @@ eddsa_cases_test() ->
         format = ans104,
         target = crypto:strong_rand_bytes(32),
         anchor = crypto:strong_rand_bytes(32),
+        tags = [{<<"tag1">>, <<"value1">>}, {<<"tag2">>, <<"value2">>}],
+        data = <<"item1_data">>
+    }, Key),
+    Bundle = serialize(dev_arweave_common:normalize(Item1)),
+    BundleItem = deserialize(Bundle),
+    %% Sign a valid transaction and verify it
+    ?assert(verify_item(BundleItem)),
+    %% Missing Anchor should fail
+    ?assertNot(verify_item(BundleItem#tx{anchor = <<>>})),
+    %% Missing Tags should fail
+    ?assertNot(verify_item(BundleItem#tx{tags = []})),
+    %% Missing Owner should fail
+    ?assertNot(verify_item(BundleItem#tx{owner = crypto:strong_rand_bytes(32)})),
+    %% Missing Target should fail
+    ?assertNot(verify_item(BundleItem#tx{target = <<>>})),
+    %% Missing Data should fail
+    ?assertNot(verify_item(BundleItem#tx{data = <<>>})),
+    ok.
+
+ecdsa_cases_test() -> 
+    Key = ar_wallet:new(?ECDSA_KEY_TYPE),
+    %% Owner and SignatureType defined during signing process.
+    Item1 = sign_item(#tx{
+        format = ans104,
+        target = crypto:strong_rand_bytes(65),
+        anchor = crypto:strong_rand_bytes(65),
         tags = [{<<"tag1">>, <<"value1">>}, {<<"tag2">>, <<"value2">>}],
         data = <<"item1_data">>
     }, Key),
@@ -1033,4 +1078,17 @@ deserialize_ed25519_transaction_test() ->
     ?assertEqual(<<"ZbExyvGrJKOJTJcHMtKzoOZVCQBkjZ+5">>, Deserialized#tx.anchor),
     ?assertEqual(<<"ejhYD9Cw9VCsVik6yGLoclo3CLRvAITHTZamLY_6ro4">>,
         hb_util:human_id(ar_wallet:to_address(Deserialized#tx.owner, Deserialized#tx.signature_type))),
+    ?assert(verify_item(Deserialized)).
+
+deserialize_ecdsa_transaction_test() ->
+    % ans104-item-ecdsa.bin is dataitem 0OUSBugZVc7GKBFXE6jCukG3VFZjCTyVNP6UcsP-exE
+    % ans104-item-ecdsa1.bin is dataitem SpQnHfQQEeCUk6JRClGBuAWI3c9_KMP0odyYvWnRonY
+    {ok, Serialized} = file:read_file(<<"test/arbundles.js/ans104-item-ecdsa1.bin">>),
+    Deserialized = deserialize(Serialized),
+    %?assertEqual([{<<"IPFS-Hash">>,<<"bafybeie6po7eejb7nq277r6b5epwp7q7g54pwbdeuetxui2545xfph6q4i">>},{<<"Content-Type">>,<<"image/webp">>}], Deserialized#tx.tags),
+    ?assertEqual(<<"">>, Deserialized#tx.anchor),
+    ?assertEqual(<<"CuHFeyQNma_ZQdioGUVnHm3vxjeu0nLqZMHV6ML3FPM3-Uk2lrtLuR45m0hw2_fXBWwfZPgtUmEZ8_l4ks5EWhs">>, hb_util:encode(Deserialized#tx.signature)),
+    ?assertEqual({ecdsa,secp256k1}, Deserialized#tx.signature_type),
+    ?assertEqual(<<"AZ6R2mG8zxW9q7--iZXGrBknjegHoPzmG5IG-nxvMaM">>,
+        hb_util:human_id(ar_wallet:to_address(Deserialized#tx.owner, {eddsa, ed25519}))),
     ?assert(verify_item(Deserialized)).

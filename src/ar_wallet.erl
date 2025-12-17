@@ -20,6 +20,9 @@ new(KeyType = {KeyAlg, PublicExpnt}) when KeyType =:= {rsa, 65537} ->
     {{KeyType, Priv, Pub}, {KeyType, Pub}};
 new(KeyType = {KeyAlg, Curve}) when KeyType =:= {?EDDSA_SIGN_ALG, ed25519} -> 
     {Pub, Priv} = crypto:generate_key(KeyAlg, Curve),
+    {{KeyType, Priv, Pub}, {KeyType, Pub}};
+new(KeyType = {_KeyAlg, Curve}) when KeyType =:= {?ECDSA_SIGN_ALG, secp256k1} -> 
+    {Pub, Priv} = crypto:generate_key(ecdh, Curve),
     {{KeyType, Priv, Pub}, {KeyType, Pub}}.
 
 %% @doc Sign some data with a private key.
@@ -40,6 +43,10 @@ sign({{rsa, PublicExpnt}, Priv, Pub}, Data, DigestType) when PublicExpnt =:= 655
     );
 sign({KeyType = {KeyAlg, Curve}, Priv, _Pub}, Data, _DigestType) when KeyType =:= {?EDDSA_SIGN_ALG, ed25519} ->
     crypto:sign(KeyAlg, none, Data, [Priv, Curve]);
+sign({KeyType, Priv, _Pub}, Data, _DigestType) when KeyType =:= {?ECDSA_SIGN_ALG, secp256k1} ->
+    %% This doesn't work becasue doesn't use RFC6979 (deterministic signature)
+    %crypto:sign(KeyAlg, DigestType, Data, [Priv, Curve]);
+    ecdsa_rfc6979:sign(Data, Priv);
 sign({{KeyType, Priv, Pub}, {KeyType, Pub}}, Data, DigestType) ->
     sign({KeyType, Priv, Pub}, Data, DigestType).
 
@@ -64,8 +71,16 @@ verify({{rsa, PublicExpnt}, Pub}, Data, Sig, DigestType) when PublicExpnt =:= 65
     );
 verify({{eddsa, Curve}, Pub}, Data, Sig, _DigestType) when
       byte_size(Pub) == 32 andalso byte_size(Sig) == 64 andalso Curve =:= ed25519 ->
-    crypto:verify(eddsa, none, Data, Sig, [Pub, Curve]).
-
+    crypto:verify(eddsa, none, Data, Sig, [Pub, Curve]);
+verify({{ecdsa, secp256k1}, Pub}, Data, Sig, _DigestType) when byte_size(Pub) == 65 andalso byte_size(Sig) == 65 ->
+    %crypto:verify(
+    %    ecdsa,
+    %    DigestType,
+    %    Data,
+    %    Sig,
+    %    [Pub, secp256k1]
+    %).
+    ecdsa_rfc6979:verify(Data, Sig, Pub).
 
 %% @doc Find a public key from a wallet.
 to_pubkey(Pubkey) ->
@@ -88,7 +103,7 @@ to_address({{_, _, PubKey}, {_, PubKey}}, _) ->
     to_address(PubKey);
 to_address(PubKey, {rsa, 65537}) ->
     to_rsa_address(PubKey);
-to_address(PubKey, {ecdsa, 256}) ->
+to_address(PubKey, {ecdsa, secp256k1}) ->
     to_ecdsa_address(PubKey);
 to_address(PubKey, {eddsa, ed25519}) -> 
     to_eddsa_address(PubKey).
