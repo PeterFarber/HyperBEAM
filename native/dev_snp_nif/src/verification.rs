@@ -103,8 +103,36 @@ fn verify_signature<'a>(
     // log_message("INFO", file!(), line!(), "Verifying signature...");
 
     // Step 1: Parse the report JSON into a serde Value object.
+    eprintln!("[RUST-VCEK] Raw JSON input size: {} bytes", report.as_slice().len());
+    eprintln!("[RUST-VCEK] Raw JSON (first 500 chars): {}", 
+        String::from_utf8_lossy(&report.as_slice()[..report.as_slice().len().min(500)]));
+    
     let json_data = match serde_json::from_slice::<Value>(report.as_slice()) {
-        Ok(data) => data,
+        Ok(data) => {
+            eprintln!("[RUST-VCEK] JSON parsed successfully");
+            // Log key TCB fields from JSON
+            eprintln!("[RUST-VCEK] JSON current_tcb: bootloader={}, tee={}, snp={}, microcode={}",
+                data["current_tcb"]["bootloader"].as_u64().unwrap_or(0),
+                data["current_tcb"]["tee"].as_u64().unwrap_or(0),
+                data["current_tcb"]["snp"].as_u64().unwrap_or(0),
+                data["current_tcb"]["microcode"].as_u64().unwrap_or(0));
+            eprintln!("[RUST-VCEK] JSON reported_tcb: bootloader={}, tee={}, snp={}, microcode={}",
+                data["reported_tcb"]["bootloader"].as_u64().unwrap_or(0),
+                data["reported_tcb"]["tee"].as_u64().unwrap_or(0),
+                data["reported_tcb"]["snp"].as_u64().unwrap_or(0),
+                data["reported_tcb"]["microcode"].as_u64().unwrap_or(0));
+            eprintln!("[RUST-VCEK] JSON committed_tcb: bootloader={}, tee={}, snp={}, microcode={}",
+                data["committed_tcb"]["bootloader"].as_u64().unwrap_or(0),
+                data["committed_tcb"]["tee"].as_u64().unwrap_or(0),
+                data["committed_tcb"]["snp"].as_u64().unwrap_or(0),
+                data["committed_tcb"]["microcode"].as_u64().unwrap_or(0));
+            eprintln!("[RUST-VCEK] JSON launch_tcb: bootloader={}, tee={}, snp={}, microcode={}",
+                data["launch_tcb"]["bootloader"].as_u64().unwrap_or(0),
+                data["launch_tcb"]["tee"].as_u64().unwrap_or(0),
+                data["launch_tcb"]["snp"].as_u64().unwrap_or(0),
+                data["launch_tcb"]["microcode"].as_u64().unwrap_or(0));
+            data
+        },
         Err(err) => {
             return Ok((
                 rustler::types::atom::error(),
@@ -269,6 +297,42 @@ fn verify_signature<'a>(
             _reserved: [0; 368],
         },
     };
+
+    // Log the full attestation report struct (especially TCB fields)
+    eprintln!("[RUST-VCEK] AttestationReport struct created:");
+    eprintln!("[RUST-VCEK]   version: {}", attestation_report.version);
+    eprintln!("[RUST-VCEK]   guest_svn: {}", attestation_report.guest_svn);
+    eprintln!("[RUST-VCEK]   policy: {}", attestation_report.policy.0);
+    eprintln!("[RUST-VCEK]   current_tcb: bootloader={}, tee={}, snp={}, microcode={}",
+        attestation_report.current_tcb.bootloader,
+        attestation_report.current_tcb.tee,
+        attestation_report.current_tcb.snp,
+        attestation_report.current_tcb.microcode);
+    eprintln!("[RUST-VCEK]   reported_tcb: bootloader={}, tee={}, snp={}, microcode={}",
+        attestation_report.reported_tcb.bootloader,
+        attestation_report.reported_tcb.tee,
+        attestation_report.reported_tcb.snp,
+        attestation_report.reported_tcb.microcode);
+    eprintln!("[RUST-VCEK]   committed_tcb: bootloader={}, tee={}, snp={}, microcode={}",
+        attestation_report.committed_tcb.bootloader,
+        attestation_report.committed_tcb.tee,
+        attestation_report.committed_tcb.snp,
+        attestation_report.committed_tcb.microcode);
+    eprintln!("[RUST-VCEK]   launch_tcb: bootloader={}, tee={}, snp={}, microcode={}",
+        attestation_report.launch_tcb.bootloader,
+        attestation_report.launch_tcb.tee,
+        attestation_report.launch_tcb.snp,
+        attestation_report.launch_tcb.microcode);
+    eprintln!("[RUST-VCEK]   current_build: {}, current_minor: {}, current_major: {}",
+        attestation_report.current_build,
+        attestation_report.current_minor,
+        attestation_report.current_major);
+    eprintln!("[RUST-VCEK]   committed_build: {}, committed_minor: {}, committed_major: {}",
+        attestation_report.committed_build,
+        attestation_report.committed_minor,
+        attestation_report.committed_major);
+    eprintln!("[RUST-VCEK]   signature.r first 8: {:02x?}", &attestation_report.signature.r[..8.min(attestation_report.signature.r.len())]);
+    eprintln!("[RUST-VCEK]   signature.s first 8: {:02x?}", &attestation_report.signature.s[..8.min(attestation_report.signature.s.len())]);
 
     // Step 3: Extract the chip ID and TCB version.
     let chip_id_array: [u8; 64] = attestation_report
