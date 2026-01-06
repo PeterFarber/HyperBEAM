@@ -1007,7 +1007,7 @@ dependencies = [
 [[package]]
 name = "sev"
 version = "5.0.0"
-source = "git+https://github.com/PeterFarber/sev.git#f51d23f9a842f7868fd8147d0fe7c73e4fd55550"
+source = "git+https://github.com/PeterFarber/sev.git#c71584b7146c2872bd73de5d5944e6c383eedf9c"
 dependencies = [
  "base64 0.22.1",
  "bincode",
