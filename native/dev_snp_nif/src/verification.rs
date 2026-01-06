@@ -294,8 +294,15 @@ fn verify_signature<'a>(
     //log_message("INFO", file!(), line!(), "CA chain verification successful.");
 
     // Step 6: Verify the attestation report.
+    eprintln!("[RUST-VCEK] Starting attestation report verification");
+    eprintln!("[RUST-VCEK] Report version: {}", attestation_report.version);
+    eprintln!("[RUST-VCEK] Report signature r first 8: {:02x?}", &attestation_report.signature.r[..8.min(attestation_report.signature.r.len())]);
+    eprintln!("[RUST-VCEK] Report signature s first 8: {:02x?}", &attestation_report.signature.s[..8.min(attestation_report.signature.s.len())]);
+    
     let cert_chain = Chain { ca, vek: vcek };
+    eprintln!("[RUST-VCEK] Calling (&cert_chain, &attestation_report).verify()");
     if let Err(e) = (&cert_chain, &attestation_report).verify() {
+        eprintln!("[RUST-VCEK] Verification returned error: {:?}", e);
         log_message(
             "ERROR",
             file!(),
@@ -304,6 +311,7 @@ fn verify_signature<'a>(
         );
         return Ok((atom::error(), format!("Report verification failed: {:?}", e)).encode(env));
     }
+    eprintln!("[RUST-VCEK] Verification succeeded!");
 
     //log_message("INFO", file!(), line!(), "Signature verification successful.");
     Ok((ok(), true).encode(env))
